@@ -134,7 +134,7 @@
   /* ===== MODE TABS ===== */
   .tabs {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     gap: 4px;
     padding: 4px;
     background: rgba(0,0,0,0.25);
@@ -797,8 +797,9 @@
     opacity: 0.9;
   }
 
-  /* Responsive tweaks for tab bar with 5 items on narrow screens */
+  /* Responsive tweaks for tab bar with 6 items on narrow screens */
   @media (max-width: 520px) {
+    .tabs { grid-template-columns: repeat(6, 1fr); }
     .tab { font-size: 10px; padding: 8px 2px; letter-spacing: -0.01em; }
     .browse-mc-options .browse-opt { font-size: 14px; }
   }
@@ -823,14 +824,27 @@
   <div class="progress-strip">
     <div class="progress-bar"><div class="progress-fill" id="progFill"></div></div>
     <div class="progress-text" id="progText">0 / 89 gelernt</div>
+    <button id="resetProgressBtn" title="Lernfortschritt zurücksetzen" style="
+      flex-shrink: 0;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-muted);
+      font-size: 14px;
+      padding: 3px 7px;
+      cursor: pointer;
+      line-height: 1;
+      transition: all 0.15s;
+    ">↺</button>
   </div>
 
   <div class="tabs">
-    <button class="tab active" data-mode="browse">Durchgehen</button>
-    <button class="tab" data-mode="mc">Multiple Choice</button>
-    <button class="tab" data-mode="free">Freitext</button>
-    <button class="tab" data-mode="flashcard">Karteikarten</button>
-    <button class="tab" data-mode="exam">Prüfung</button>
+    <button class="tab active" data-mode="browse">Alle</button>
+    <button class="tab" data-mode="mc_seq">MC ▶</button>
+    <button class="tab" data-mode="mc_rnd">MC ∞</button>
+    <button class="tab" data-mode="free_seq">Text ▶</button>
+    <button class="tab" data-mode="free_rnd">Text ∞</button>
+    <button class="tab" data-mode="exam">Test</button>
   </div>
 
   <div id="stage"></div>
@@ -864,7 +878,9 @@ let state = {
   currentQNum: null,
   history: [],
   exam: null,
-  browseIdx: 0
+  browseIdx: 0,
+  mcSeqIdx: 0,
+  freeSeqIdx: 0
 };
 
 async function loadState() {
@@ -876,6 +892,8 @@ async function loadState() {
       state.stats = { ...initialStats(), ...saved.stats };
       if (saved.mode) state.mode = saved.mode;
       if (typeof saved.browseIdx === 'number') state.browseIdx = saved.browseIdx;
+      if (typeof saved.mcSeqIdx === 'number') state.mcSeqIdx = saved.mcSeqIdx;
+      if (typeof saved.freeSeqIdx === 'number') state.freeSeqIdx = saved.freeSeqIdx;
     }
   } catch(e) { /* first run or storage unavailable */ }
 }
@@ -885,7 +903,9 @@ async function saveState() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       mode: state.mode,
       stats: state.stats,
-      browseIdx: state.browseIdx
+      browseIdx: state.browseIdx,
+      mcSeqIdx: state.mcSeqIdx,
+      freeSeqIdx: state.freeSeqIdx
     }));
   } catch(e) { /* storage unavailable */ }
 }
@@ -964,11 +984,12 @@ function render() {
     t.classList.toggle('active', t.dataset.mode === state.mode);
   });
 
-  if (state.mode === 'browse')    renderBrowse();
-  else if (state.mode === 'mc')   renderMC();
-  else if (state.mode === 'free') renderFreetext();
-  else if (state.mode === 'flashcard') renderFlashcard();
-  else if (state.mode === 'exam') renderExam();
+  if (state.mode === 'browse')        renderBrowse();
+  else if (state.mode === 'mc_seq')   renderMCSeq();
+  else if (state.mode === 'mc_rnd')   renderMC();
+  else if (state.mode === 'free_seq') renderFreetextSeq();
+  else if (state.mode === 'free_rnd') renderFreetext();
+  else if (state.mode === 'exam')     renderExam();
 }
 
 // ───────── Browse mode (sequential, answers visible) ─────────
@@ -1062,24 +1083,75 @@ function renderBrowse() {
   });
 }
 
-// Keyboard navigation (arrow keys) for browse mode
+// Keyboard navigation (arrow keys) for browse + seq modes
 document.addEventListener('keydown', (e) => {
-  if (state.mode !== 'browse') return;
-  // Ignore when typing in an input / textarea
   const tag = document.activeElement?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-  if (e.key === 'ArrowLeft' && state.browseIdx > 0) {
-    state.browseIdx--;
-    render();
-  } else if (e.key === 'ArrowRight' && state.browseIdx < QUESTIONS.length - 1) {
-    state.browseIdx++;
-    render();
+
+  if (state.mode === 'browse') {
+    const MC_Q = QUESTIONS.filter(q => q.type === 'mc');
+    const FR_Q = QUESTIONS.filter(q => q.type === 'free');
+    if (e.key === 'ArrowLeft' && state.browseIdx > 0) { state.browseIdx--; render(); }
+    else if (e.key === 'ArrowRight' && state.browseIdx < QUESTIONS.length - 1) { state.browseIdx++; render(); }
+  } else if (state.mode === 'mc_seq') {
+    const pool = QUESTIONS.filter(q => q.type === 'mc');
+    if (e.key === 'ArrowLeft' && state.mcSeqIdx > 0) { state.mcSeqIdx--; render(); }
+    else if (e.key === 'ArrowRight' && state.mcSeqIdx < pool.length - 1) { state.mcSeqIdx++; render(); }
+  } else if (state.mode === 'free_seq') {
+    const pool = QUESTIONS.filter(q => q.type === 'free');
+    if (e.key === 'ArrowLeft' && state.freeSeqIdx > 0) { state.freeSeqIdx--; render(); }
+    else if (e.key === 'ArrowRight' && state.freeSeqIdx < pool.length - 1) { state.freeSeqIdx++; render(); }
   }
 });
 
-// ───────── Multiple Choice mode ─────────
+// ───────── MC · Sequenziell ─────────
+function renderMCSeq() {
+  const pool = QUESTIONS.filter(q => q.type === 'mc');
+  if (state.mcSeqIdx < 0) state.mcSeqIdx = 0;
+  if (state.mcSeqIdx >= pool.length) state.mcSeqIdx = pool.length - 1;
+  const q = pool[state.mcSeqIdx];
+  state.currentQNum = q.num;
+  saveState();
+
+  const isFirst = state.mcSeqIdx === 0;
+  const isLast = state.mcSeqIdx === pool.length - 1;
+  const shuffled = [...q.options].sort(() => Math.random() - 0.5);
+  const isMultiCorrect = q.correct_labels.length > 1;
+  let selected = new Set();
+  let submitted = false;
+
+  stage.innerHTML = `
+    <div class="card">
+      <div class="q-meta">
+        <span class="q-number">MC ${state.mcSeqIdx + 1} / ${pool.length}</span>
+        <span class="q-type-badge">${isMultiCorrect ? 'MEHRFACHAUSWAHL' : 'EINFACHAUSWAHL'}</span>
+      </div>
+      <div class="question">${escapeHTML(q.question)}</div>
+      <div class="options" id="mcOpts">
+        ${shuffled.map(opt => `
+          <button class="option" data-label="${opt.label}">
+            <span class="mark">${opt.label.toUpperCase()}</span>
+            <span>${escapeHTML(opt.text)}</span>
+          </button>`).join('')}
+      </div>
+      <div id="mcFeedback"></div>
+      <div class="actions" id="mcActions">
+        <button class="btn btn-primary" id="mcSubmit">Antwort prüfen</button>
+      </div>
+      <div class="browse-nav" style="margin-top:16px;">
+        <button class="nav-btn" id="seqPrev" ${isFirst ? 'disabled' : ''}>←</button>
+        <div class="nav-jump">Frage <input type="number" id="mcJump" min="1" max="${pool.length}" value="${state.mcSeqIdx + 1}" inputmode="numeric"> / ${pool.length}</div>
+        <button class="nav-btn" id="seqNext" ${isLast ? 'disabled' : ''}>→</button>
+      </div>
+      ${renderStatsBox(q.num)}
+    </div>`;
+
+  _attachMCHandlers(shuffled, q, isMultiCorrect, selected, submitted, 'mc_seq', pool);
+  _attachSeqNav('mcJump', pool.length, (idx) => { state.mcSeqIdx = idx; render(); });
+}
+
+// ───────── MC · Zufall ─────────
 function renderMC() {
-  // Only MC questions
   const pool = QUESTIONS.filter(q => q.type === 'mc');
   const q = pickNextQuestion(pool);
   state.currentQNum = q.num;
@@ -1087,13 +1159,12 @@ function renderMC() {
 }
 
 function renderMCQuestion(q) {
-  // Shuffle options for display but remember labels
   const shuffled = [...q.options].sort(() => Math.random() - 0.5);
   const isMultiCorrect = q.correct_labels.length > 1;
   let selected = new Set();
   let submitted = false;
 
-  const html = `
+  stage.innerHTML = `
     <div class="card">
       <div class="q-meta">
         <span class="q-number">FRAGE ${String(q.num).padStart(2,'0')} / 89</span>
@@ -1105,8 +1176,7 @@ function renderMCQuestion(q) {
           <button class="option" data-label="${opt.label}">
             <span class="mark">${opt.label.toUpperCase()}</span>
             <span>${escapeHTML(opt.text)}</span>
-          </button>
-        `).join('')}
+          </button>`).join('')}
       </div>
       <div id="mcFeedback"></div>
       <div class="actions" id="mcActions">
@@ -1114,72 +1184,135 @@ function renderMCQuestion(q) {
         <button class="btn btn-ghost" id="mcSkip">Überspringen</button>
       </div>
       ${renderStatsBox(q.num)}
-    </div>
-  `;
-  stage.innerHTML = html;
+    </div>`;
 
+  _attachMCHandlers(shuffled, q, isMultiCorrect, selected, submitted, 'mc_rnd', null);
+  document.getElementById('mcSkip').addEventListener('click', () => render());
+}
+
+// Shared MC interaction handler
+function _attachMCHandlers(shuffled, q, isMultiCorrect, selected, submitted, mode, pool) {
   const optBtns = stage.querySelectorAll('.option');
   optBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       if (submitted) return;
       const lbl = btn.dataset.label;
       if (isMultiCorrect) {
-        // Multi-select: toggle
         if (selected.has(lbl)) { selected.delete(lbl); btn.classList.remove('selected'); }
         else { selected.add(lbl); btn.classList.add('selected'); }
       } else {
         selected.clear();
         optBtns.forEach(b => b.classList.remove('selected'));
-        selected.add(lbl);
-        btn.classList.add('selected');
+        selected.add(lbl); btn.classList.add('selected');
       }
     });
   });
 
-  document.getElementById('mcSkip').addEventListener('click', () => render());
-
   document.getElementById('mcSubmit').addEventListener('click', () => {
-    if (submitted) return;
-    if (selected.size === 0) return;
+    if (submitted || selected.size === 0) return;
     submitted = true;
-
     const correctSet = new Set(q.correct_labels);
-    const userSet = selected;
-
-    // Evaluate: correct iff sets match exactly
-    const isCorrect =
-      userSet.size === correctSet.size &&
-      [...userSet].every(l => correctSet.has(l));
+    const isCorrect = selected.size === correctSet.size && [...selected].every(l => correctSet.has(l));
 
     optBtns.forEach(btn => {
-      btn.classList.add('disabled');
-      btn.classList.remove('selected');
+      btn.classList.add('disabled'); btn.classList.remove('selected');
       const lbl = btn.dataset.label;
       if (correctSet.has(lbl)) btn.classList.add('correct');
-      else if (userSet.has(lbl)) btn.classList.add('incorrect');
+      else if (selected.has(lbl)) btn.classList.add('incorrect');
     });
-
     markAnswered(q.num, isCorrect);
 
-    const feedbackHTML = isCorrect
+    document.getElementById('mcFeedback').innerHTML = isCorrect
       ? `<div class="feedback correct"><span class="feedback-icon">✓</span><span>Richtig!</span></div>`
       : `<div class="feedback incorrect"><span class="feedback-icon">✗</span><span>Nicht ganz. Richtig ${correctSet.size === 1 ? 'ist' : 'sind'}: ${[...correctSet].sort().map(l => l.toUpperCase()).join(', ')}.</span></div>`;
-    document.getElementById('mcFeedback').innerHTML = feedbackHTML;
 
-    document.getElementById('mcActions').innerHTML = `
-      <button class="btn btn-primary" id="mcNext">Nächste Frage →</button>
-    `;
-    document.getElementById('mcNext').addEventListener('click', () => render());
+    if (mode === 'mc_seq' && pool) {
+      // In sequential mode: show next button but keep nav
+      document.getElementById('mcActions').innerHTML = '';
+    } else {
+      document.getElementById('mcActions').innerHTML =
+        `<button class="btn btn-primary" id="mcNext">Nächste Frage →</button>`;
+      document.getElementById('mcNext').addEventListener('click', () => render());
+    }
     updateProgressBar();
-    // Re-render stats inline
-    const statsEl = stage.querySelector('.stats-row');
-    if (statsEl) statsEl.outerHTML = renderStatsBox(q.num);
   });
 }
 
-// ───────── Freetext mode ─────────
+// Shared seq nav helper
+function _attachSeqNav(jumpId, poolLen, goTo) {
+  const prevBtn = document.getElementById('seqPrev');
+  const nextBtn = document.getElementById('seqNext');
+  const jumpInput = document.getElementById(jumpId);
+
+  if (prevBtn) prevBtn.addEventListener('click', () => {
+    const cur = jumpId === 'mcJump' ? state.mcSeqIdx : state.freeSeqIdx;
+    if (cur > 0) goTo(cur - 1);
+  });
+  if (nextBtn) nextBtn.addEventListener('click', () => {
+    const cur = jumpId === 'mcJump' ? state.mcSeqIdx : state.freeSeqIdx;
+    if (cur < poolLen - 1) goTo(cur + 1);
+  });
+  if (jumpInput) {
+    const doJump = () => {
+      const n = parseInt(jumpInput.value, 10);
+      if (!isNaN(n) && n >= 1 && n <= poolLen) goTo(n - 1);
+      else jumpInput.value = (jumpId === 'mcJump' ? state.mcSeqIdx : state.freeSeqIdx) + 1;
+    };
+    jumpInput.addEventListener('change', doJump);
+    jumpInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doJump(); jumpInput.blur(); } });
+  }
+}
+
+// ───────── Freitext · Sequenziell ─────────
+function renderFreetextSeq() {
+  const pool = QUESTIONS.filter(q => q.type === 'free');
+  if (state.freeSeqIdx < 0) state.freeSeqIdx = 0;
+  if (state.freeSeqIdx >= pool.length) state.freeSeqIdx = pool.length - 1;
+  const q = pool[state.freeSeqIdx];
+  state.currentQNum = q.num;
+  saveState();
+
+  const isFirst = state.freeSeqIdx === 0;
+  const isLast = state.freeSeqIdx === pool.length - 1;
+
+  stage.innerHTML = `
+    <div class="card">
+      <div class="q-meta">
+        <span class="q-number">Freitext ${state.freeSeqIdx + 1} / ${pool.length}</span>
+        <span class="q-type-badge free">FREITEXT</span>
+      </div>
+      <div class="question">${escapeHTML(q.question)}</div>
+      <textarea class="freetext-input" id="ftInput" placeholder="Deine Antwort…"></textarea>
+      <div id="ftReveal"></div>
+      <div class="actions" id="ftActions">
+        <button class="btn btn-primary" id="ftShow">Antwort zeigen</button>
+      </div>
+      <div class="browse-nav" style="margin-top:16px;">
+        <button class="nav-btn" id="seqPrev" ${isFirst ? 'disabled' : ''}>←</button>
+        <div class="nav-jump">Frage <input type="number" id="freeJump" min="1" max="${pool.length}" value="${state.freeSeqIdx + 1}" inputmode="numeric"> / ${pool.length}</div>
+        <button class="nav-btn" id="seqNext" ${isLast ? 'disabled' : ''}>→</button>
+      </div>
+      ${renderStatsBox(q.num)}
+    </div>`;
+
+  document.getElementById('ftShow').addEventListener('click', () => {
+    document.getElementById('ftReveal').innerHTML = `
+      <div class="reference-answer">
+        <div class="ref-label">Musterantwort</div>
+        <div>${renderAnswer(q.answer)}</div>
+      </div>`;
+    document.getElementById('ftActions').innerHTML = `
+      <button class="btn btn-success" id="ftOk">Ich wusste es</button>
+      <button class="btn btn-danger" id="ftNo">Ich wusste es nicht</button>`;
+    document.getElementById('ftOk').addEventListener('click', () => { markAnswered(q.num, true); });
+    document.getElementById('ftNo').addEventListener('click', () => { markAnswered(q.num, false); });
+  });
+
+  _attachSeqNav('freeJump', pool.length, (idx) => { state.freeSeqIdx = idx; render(); });
+}
+
+// ───────── Freitext · Zufall ─────────
 function renderFreetext() {
-  // Only free-text questions
   const pool = QUESTIONS.filter(q => q.type === 'free');
   const q = pickNextQuestion(pool);
   state.currentQNum = q.num;
@@ -1187,104 +1320,36 @@ function renderFreetext() {
 }
 
 function renderFreetextQuestion(q) {
-  const html = `
+  stage.innerHTML = `
     <div class="card">
       <div class="q-meta">
         <span class="q-number">FRAGE ${String(q.num).padStart(2,'0')} / 89</span>
         <span class="q-type-badge free">FREITEXT</span>
       </div>
       <div class="question">${escapeHTML(q.question)}</div>
-      <textarea class="freetext-input" id="ftInput" placeholder="Deine Antwort…" autofocus></textarea>
+      <textarea class="freetext-input" id="ftInput" placeholder="Deine Antwort…"></textarea>
       <div id="ftReveal"></div>
       <div class="actions" id="ftActions">
         <button class="btn btn-primary" id="ftShow">Antwort zeigen</button>
         <button class="btn btn-ghost" id="ftSkip">Überspringen</button>
       </div>
       ${renderStatsBox(q.num)}
-    </div>
-  `;
-  stage.innerHTML = html;
-  document.getElementById('ftSkip').addEventListener('click', () => render());
+    </div>`;
 
+  document.getElementById('ftSkip').addEventListener('click', () => render());
   document.getElementById('ftShow').addEventListener('click', () => {
     document.getElementById('ftReveal').innerHTML = `
       <div class="reference-answer">
         <div class="ref-label">Musterantwort</div>
         <div>${renderAnswer(q.answer)}</div>
-      </div>
-    `;
+      </div>`;
     document.getElementById('ftActions').innerHTML = `
       <button class="btn btn-success" id="ftOk">Ich wusste es</button>
-      <button class="btn btn-danger" id="ftNo">Ich wusste es nicht</button>
-    `;
+      <button class="btn btn-danger" id="ftNo">Ich wusste es nicht</button>`;
     document.getElementById('ftOk').addEventListener('click', () => { markAnswered(q.num, true); render(); });
     document.getElementById('ftNo').addEventListener('click', () => { markAnswered(q.num, false); render(); });
   });
 }
-
-// ───────── Flashcard mode (all questions) ─────────
-function renderFlashcard() {
-  const q = pickNextQuestion(QUESTIONS);
-  state.currentQNum = q.num;
-  renderFlashcardQuestion(q);
-}
-
-function renderFlashcardQuestion(q) {
-  const typeBadge = q.type === 'mc'
-    ? `<span class="q-type-badge">MULTIPLE CHOICE</span>`
-    : `<span class="q-type-badge free">FREITEXT</span>`;
-
-  const html = `
-    <div class="card">
-      <div class="q-meta">
-        <span class="q-number">FRAGE ${String(q.num).padStart(2,'0')} / 89</span>
-        ${typeBadge}
-      </div>
-      <div class="question">${escapeHTML(q.question)}</div>
-      <div id="fcReveal"></div>
-      <div class="actions" id="fcActions">
-        <button class="btn btn-primary" id="fcShow">Antwort einblenden</button>
-        <button class="btn btn-ghost" id="fcSkip">Überspringen</button>
-      </div>
-      ${renderStatsBox(q.num)}
-    </div>
-  `;
-  stage.innerHTML = html;
-  document.getElementById('fcSkip').addEventListener('click', () => render());
-
-  document.getElementById('fcShow').addEventListener('click', () => {
-    let revealHTML;
-    if (q.type === 'free') {
-      revealHTML = `
-        <div class="flashcard-reveal">
-          <div class="ref-label">Antwort</div>
-          <div>${renderAnswer(q.answer)}</div>
-        </div>`;
-    } else {
-      const correctSet = new Set(q.correct_labels);
-      revealHTML = `
-        <div class="flashcard-reveal">
-          <div class="ref-label">Richtige Antwort${correctSet.size > 1 ? 'en' : ''}</div>
-          <div class="opt-list">
-            ${q.options.map(opt => `
-              <div class="fc-opt ${correctSet.has(opt.label) ? 'correct' : 'wrong'}">
-                <span class="fc-label">${opt.label.toUpperCase()}</span>${escapeHTML(opt.text)}
-              </div>
-            `).join('')}
-          </div>
-        </div>`;
-    }
-    document.getElementById('fcReveal').innerHTML = revealHTML;
-
-    document.getElementById('fcActions').innerHTML = `
-      <button class="btn btn-success" id="fcOk">Wusste ich</button>
-      <button class="btn btn-danger" id="fcNo">Wusste ich nicht</button>
-    `;
-    document.getElementById('fcOk').addEventListener('click', () => { markAnswered(q.num, true); render(); });
-    document.getElementById('fcNo').addEventListener('click', () => { markAnswered(q.num, false); render(); });
-  });
-}
-
 // ───────── Exam mode ─────────
 function renderExam() {
   if (!state.exam) {
@@ -1308,19 +1373,9 @@ function renderExam() {
           <div class="stat-box good"><div class="n">${sumStats('correct')}</div><div class="l">Richtig</div></div>
           <div class="stat-box bad"><div class="n">${sumStats('wrong')}</div><div class="l">Falsch</div></div>
         </div>
-        <div class="menu-row" style="margin-top: 16px;">
-          <div>
-            <div class="label">Fortschritt zurücksetzen</div>
-            <div class="hint">Löscht alle Statistiken und fängt bei 0 an</div>
-          </div>
-          <button id="resetBtn">Reset</button>
-        </div>
       </div>
     `;
     document.getElementById('examStart').addEventListener('click', startExam);
-    document.getElementById('resetBtn').addEventListener('click', () => {
-      if (confirm('Wirklich alle Lernfortschritte löschen?')) resetProgress();
-    });
     return;
   }
 
@@ -1348,14 +1403,13 @@ function startExam() {
 
 function renderExamQuestion(q) {
   const totalPointsSoFar = state.exam.results.reduce((a, r) => a + r.points, 0);
-  const maxSoFar = state.exam.currentIdx * 2;
 
   const headerHTML = `
     <div class="exam-header">
       <div>
         <div class="title">Prüfung · Frage ${state.exam.currentIdx + 1} / 18</div>
       </div>
-      <div class="points">${totalPointsSoFar} / ${maxSoFar} P.</div>
+      <div class="points">${totalPointsSoFar} / 36 P.</div>
     </div>
   `;
 
@@ -1620,6 +1674,9 @@ function renderAnswer(text) {
 (async () => {
   await loadState();
   render();
+  document.getElementById('resetProgressBtn').addEventListener('click', () => {
+    if (confirm('Lernfortschritt wirklich zurücksetzen?')) resetProgress();
+  });
 })();
 </script>
 
