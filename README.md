@@ -1,1 +1,1 @@
-# skn-trainer
+# SKN-Trainer
