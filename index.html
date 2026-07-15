@@ -132,14 +132,28 @@
   }
 
   /* ===== MODE TABS ===== */
-  .tabs {
+  .tabs-row1 {
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 4px;
     padding: 4px;
     background: rgba(0,0,0,0.25);
-    border-radius: var(--radius);
+    border-radius: var(--radius) var(--radius) 0 0;
+    margin-bottom: 2px;
+  }
+
+  .tabs-row2 {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 4px;
+    padding: 4px;
+    background: rgba(0,0,0,0.15);
+    border-radius: 0 0 var(--radius) var(--radius);
     margin-bottom: 22px;
+  }
+
+  .tabs-row2.hidden {
+    display: none;
   }
 
   .tab {
@@ -162,6 +176,33 @@
     background: var(--bg-surface);
     color: var(--text);
     box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset;
+  }
+
+  .tab-sub {
+    padding: 7px 8px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .tab-sub:hover { color: var(--text); }
+
+  .tab-sub.active {
+    background: rgba(255,122,61,0.15);
+    color: var(--accent);
+    box-shadow: 0 1px 0 rgba(255,122,61,0.1) inset;
+  }
+
+  @media (max-width: 520px) {
+    .tab { font-size: 11px; padding: 8px 4px; }
+    .tab-sub { font-size: 11px; padding: 6px 4px; }
   }
 
   /* ===== CARD ===== */
@@ -797,13 +838,6 @@
     opacity: 0.9;
   }
 
-  /* Responsive tweaks for tab bar with 6 items on narrow screens */
-  @media (max-width: 520px) {
-    .tabs { grid-template-columns: repeat(6, 1fr); }
-    .tab { font-size: 10px; padding: 8px 2px; letter-spacing: -0.01em; }
-    .browse-mc-options .browse-opt { font-size: 14px; }
-  }
-
   /* Hide utility */
   .hidden { display: none !important; }
 </style>
@@ -838,13 +872,15 @@
     ">↺</button>
   </div>
 
-  <div class="tabs">
-    <button class="tab active" data-mode="browse">Alle</button>
-    <button class="tab" data-mode="mc_seq">MC ▶</button>
-    <button class="tab" data-mode="mc_rnd">MC ∞</button>
-    <button class="tab" data-mode="free_seq">Text ▶</button>
-    <button class="tab" data-mode="free_rnd">Text ∞</button>
-    <button class="tab" data-mode="exam">Test</button>
+  <div class="tabs-row1">
+    <button class="tab active" data-cat="browse">Alle</button>
+    <button class="tab" data-cat="mc">Multiple-Choice</button>
+    <button class="tab" data-cat="text">Text</button>
+    <button class="tab" data-cat="exam">Prüfung</button>
+  </div>
+  <div class="tabs-row2 hidden" id="tabsRow2">
+    <button class="tab-sub active" data-mode="seq">▶ Sequenz</button>
+    <button class="tab-sub" data-mode="rnd">∞ Zufall</button>
   </div>
 
   <div id="stage"></div>
@@ -965,13 +1001,69 @@ function updateProgressBar() {
   document.getElementById('progText').textContent = `${learned} / ${QUESTIONS.length} gelernt`;
 }
 
-// Tab handling
+// Two-row tab handling
+// state.mode stays as before: 'browse', 'mc_seq', 'mc_rnd', 'free_seq', 'free_rnd', 'exam'
+// Category map: which cat is active and whether row2 is shown
+const CAT_MODES = {
+  browse: { cat: 'browse', showRow2: false, defaultMode: 'browse' },
+  mc_seq: { cat: 'mc',     showRow2: true,  defaultMode: 'mc_seq' },
+  mc_rnd: { cat: 'mc',     showRow2: true,  defaultMode: 'mc_rnd' },
+  free_seq: { cat: 'text', showRow2: true,  defaultMode: 'free_seq' },
+  free_rnd: { cat: 'text', showRow2: true,  defaultMode: 'free_rnd' },
+  exam: { cat: 'exam',     showRow2: false, defaultMode: 'exam' },
+};
+
+// Last used sub-mode per category (seq or rnd)
+const lastSubMode = { mc: 'seq', text: 'seq' };
+
+function updateTabUI() {
+  const info = CAT_MODES[state.mode] || CAT_MODES['browse'];
+
+  // Row 1: highlight active category
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.cat === info.cat);
+  });
+
+  // Row 2: show/hide and highlight active sub-mode
+  const row2 = document.getElementById('tabsRow2');
+  if (info.showRow2) {
+    row2.classList.remove('hidden');
+    const isSeq = state.mode.endsWith('_seq');
+    document.querySelectorAll('.tab-sub').forEach(t => {
+      t.classList.toggle('active', (t.dataset.mode === 'seq') === isSeq);
+    });
+  } else {
+    row2.classList.add('hidden');
+  }
+}
+
+// Row 1 clicks
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    state.mode = tab.dataset.mode;
+    const cat = tab.dataset.cat;
+    if (cat === 'browse') state.mode = 'browse';
+    else if (cat === 'exam') state.mode = 'exam';
+    else if (cat === 'mc') state.mode = lastSubMode.mc === 'rnd' ? 'mc_rnd' : 'mc_seq';
+    else if (cat === 'text') state.mode = lastSubMode.text === 'rnd' ? 'free_rnd' : 'free_seq';
     state.exam = null;
+    saveState();
+    render();
+  });
+});
+
+// Row 2 clicks
+document.querySelectorAll('.tab-sub').forEach(sub => {
+  sub.addEventListener('click', () => {
+    const subMode = sub.dataset.mode; // 'seq' or 'rnd'
+    const info = CAT_MODES[state.mode];
+    if (!info || !info.showRow2) return;
+    if (info.cat === 'mc') {
+      state.mode = subMode === 'rnd' ? 'mc_rnd' : 'mc_seq';
+      lastSubMode.mc = subMode;
+    } else if (info.cat === 'text') {
+      state.mode = subMode === 'rnd' ? 'free_rnd' : 'free_seq';
+      lastSubMode.text = subMode;
+    }
     saveState();
     render();
   });
@@ -979,10 +1071,7 @@ document.querySelectorAll('.tab').forEach(tab => {
 
 function render() {
   updateProgressBar();
-  // Set the active tab visual
-  document.querySelectorAll('.tab').forEach(t => {
-    t.classList.toggle('active', t.dataset.mode === state.mode);
-  });
+  updateTabUI();
 
   if (state.mode === 'browse')        renderBrowse();
   else if (state.mode === 'mc_seq')   renderMCSeq();
@@ -1124,6 +1213,7 @@ function renderMCSeq() {
     <div class="card">
       <div class="q-meta">
         <span class="q-number">MC ${state.mcSeqIdx + 1} / ${pool.length}</span>
+        <span style="color: var(--text-muted); font-size: 12px;">Katalog-Nr. ${String(q.num).padStart(2,'0')}</span>
         <span class="q-type-badge">${isMultiCorrect ? 'MEHRFACHAUSWAHL' : 'EINFACHAUSWAHL'}</span>
       </div>
       <div class="question">${escapeHTML(q.question)}</div>
@@ -1279,6 +1369,7 @@ function renderFreetextSeq() {
     <div class="card">
       <div class="q-meta">
         <span class="q-number">Freitext ${state.freeSeqIdx + 1} / ${pool.length}</span>
+        <span style="color: var(--text-muted); font-size: 12px;">Katalog-Nr. ${String(q.num).padStart(2,'0')}</span>
         <span class="q-type-badge free">FREITEXT</span>
       </div>
       <div class="question">${escapeHTML(q.question)}</div>
